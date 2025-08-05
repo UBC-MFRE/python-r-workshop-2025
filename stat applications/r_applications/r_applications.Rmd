@@ -1,0 +1,855 @@
+---
+title: 'Math/Stats Application Workshop: R'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Math/Stats Application Workshop: Python
+
+Sections:
+
+1. Data Import
+2. Data checks and cleaning
+3. 1-Tail Hypothesis Test: Is everyone signing onto all 3 agreements?
+4. 2-Tail Hypothesis Test: Are Canada's emissions average?
+5. Proportion Comparison Test: Are high-income countries more likely to make emission reduction pledges?
+6. 2-Tail Means Comparison: Do high-income countries make higher or lower absolute emission reductions?
+7. Group Comparisons: Are average emission levels different by continent?
+8. Regression: Is there evidence of an Environmental Kuznets Curve?
+
+Resources:
+
+- [Hypothesis Testing in R](https://www.r-bloggers.com/2022/12/hypothesis-testing-in-r/#:~:text=Hypothesis%20Testing%20in%20R%2C%20A,are%20demonstrated%20in%20this%20course.&text=Each%20type%20of%20test%20can,test().)
+- [Introduction to Econometrics With R](https://www.econometrics-with-r.org/)
+- run `?fn` for R functions, and get their documention in the bottom-right frame.
+- search for a function's documentation on https://www.rdocumentation.org/ 
+
+
+```{r}
+# package import
+# load tidyverse library and here packages
+pacman::p_load(tidyverse, here, lmtest, sandwich)
+```
+
+
+
+
+# 1. Data Import
+
+```{r}
+# import data
+policy_df <- read_csv(here("policy_analysis.csv"))
+
+# print data head
+head(policy_df)
+```
+
+
+
+
+
+# 2. Data Checks and Cleaning Approach
+
+We want to check through our dataset before we start analyzing it, or else we're going to waste a lot of time later diverting back and fixing it. 
+
+What do we need to look at?
+
+1. Checking column data types. Are numerics in float/int format?
+2. Checking for missing values. Which columns and rows have them? How do we handle this? 
+
+
+```{r}
+# check types
+
+policy_df %>%
+  summarise_all(typeof)
+```
+
+These are mostly `doubles`, which are the correct numeric data types. The others are `character`, equivalent to Python's string data type.
+
+```{r}
+# getting column names
+
+colnames(policy_df)
+```
+These are the same as in Python!
+
+Regarding missing data, we know from our Python work that there's plenty of it. Again, we'll just be removing `NAN` data en masse. 
+
+```{r}
+# missingness check
+
+policy_df %>%
+  summarize_all(~ sum(is.na(.)))
+
+# lots!
+```
+Our takeaway is that we've got plenty of missing values, in plenty of columns!
+
+### Data Cleaning Plan
+
+We could come up with a general criteria for which rows stay and which we get rid of, to keep a common and standard dataframe. This may involve removing all countries with missing data (a strict approach), or just removing years with missing data, or a combined approach.
+
+However, our focus today is on Hypothesis Testing, with a side of Data Cleaning. So, our process will be to keep all data in the base `policy_df` DataFrame. When we're working on each specific exercise, we'll limit it just to the columns we need to use, and then remove all rows with missing data. This lets us test Hypotheses with the maximum range of available data, and try out data cleaning along the way.
+
+
+
+# 3. 1-Tail Hypothesis Test: Are all countries signing onto all 3 agreements?
+
+We'll use this question to see whether there is a high degree of consensus among the agreements being desireable. With a one-sided test, we'll see if most countries sign up onto all 3, or if there is significant non-acceptance.
+
+### Our Hypotheses
+
+- H0: Effectively all countries sign up to all 3 agreements (Kyoto, Copenhagen, Paris)
+- H1: Not all countries sign up to all 3 agreements
+
+### Steps
+
+We'll take one value from each country (all of their pledge agreements variables are the same across years), then sum the pledges they've made and compare with 3. In this case, a one-sided hypothesis test makes sense, as there are only these three agreements!
+
+
+
+```{r}
+# dataframe creation
+
+
+# Select specific columns
+hypothesis_1_df <- policy_df %>%
+  select(country, year, partytopledge1, partytopledge2, partytopledge3)
+
+# Display the first few rows
+head(hypothesis_1_df)
+```
+
+```{r}
+# NaN check
+missing_values <- hypothesis_1_df %>%
+  summarise_all(~ sum(is.na(.)))
+
+print(missing_values)
+
+# NaN removal
+hypothesis_1_df <- hypothesis_1_df %>%
+  na.omit()
+
+hypothesis_1_df
+```
+
+
+There were three different rounds of environmental pledges involved in this dataset:
+
+1. The Kyoto Protocol (signed 1997)
+2. The Copenhagen Accord (signed 2009)
+3. The Paris Agreement (signed 2016)
+
+We'll combine all three variables in `total_pledges`, equal to the number of active agreements the country has signed onto.
+
+```{r}
+# Add a new column "total_pledges" as the sum of other columns
+hypothesis_1_df <- hypothesis_1_df %>%
+  mutate(total_pledges = partytopledge1 + partytopledge2 + partytopledge3)
+
+hypothesis_1_df
+```
+
+
+```{r}
+# Group by Country and take the first value of total_pledges for each country
+
+hypothesis_1_sample_df <- hypothesis_1_df %>%
+  select(country, total_pledges) %>%
+  group_by(country) %>%
+  summarize(total_pledges = first(total_pledges))
+
+head(hypothesis_1_sample_df$total_pledges)
+
+tail(hypothesis_1_sample_df$total_pledges)
+```
+
+
+### Q1 Hypothesis Testing 
+
+
+We will use the base R function, `t.test()`
+
+It outputs a test statistic (i.e. t-value here) and an associated p-value.
+
+```{r}
+?t.test
+```
+
+The relevant arguments are:
+
+- `x`: a numeric vector of data
+- `mu`: the null hypothesis population average to compare to
+- `alternative`: one of {"two.sided", "less", "greater"} for style of t-test
+
+We can assign it to a variable called `test_result`, and then extract the t-stat and p-values with `$statistic` and `$p.value`
+
+```{r}
+# Conduct one-sample t-test
+test_result <- t.test(hypothesis_1_sample_df$total_pledges, mu = 3, alternative = "less")
+
+# Extract test statistic and p-value
+test_statistic <- test_result$statistic
+p_value <- test_result$p.value
+
+# Print results
+cat("Test Statistic: ", test_statistic, "\n")
+cat("P-value: ", p_value, "\n")
+```
+
+
+# 4. 2-Tail Hypothesis Test: Are Canada's emissions average?
+
+
+Now we'll be doing a two-sided hypothesis test, where we compare a series of data points to a given value and test if the sample has a statistically significant difference. This time, it can be greater or less than the given value.
+
+### Our Hypotheses
+
+- H0: Most countries' average per-capita carbon emissions are equal to Canadian values
+- H1: Most countries' average per-capita carbon emissions are not equal to Canadian values 
+
+### Steps
+
+We are going to take Canada's average per capita carbon emissions and compare them to all other countries. Are other countries significantly greater or lower than us?
+
+
+
+```{r}
+
+# Create hypothesis_2_df with selected columns
+hypothesis_2_df <- policy_df %>%
+  select(country, GHG_percapita)
+
+# Group by country to get average emissions
+hypothesis_2_df <- hypothesis_2_df %>%
+  drop_na() %>%
+  group_by(country) %>%
+  summarise(avg_emissions = mean(GHG_percapita))
+
+# Split into Canada and non-Canada versions
+hypothesis_2_canada <- hypothesis_2_df %>%
+  filter(country == "Canada")
+
+hypothesis_2_df <- hypothesis_2_df %>%
+  filter(country != "Canada")
+
+```
+
+```{r}
+head(hypothesis_2_df$avg_emissions)
+
+tail(hypothesis_2_df$avg_emissions)
+```
+
+```{r}
+hypothesis_2_canada
+```
+
+
+### Q2 Hypothesis Testing
+
+This also uses the base R `t.test()` function.
+
+```{r}
+# Extract the GHG_percapita values for hypothesis_2_df and hypothesis_2_canada
+hypothesis_2_df_values <- hypothesis_2_df$avg_emissions
+hypothesis_2_canada_values <- hypothesis_2_canada$avg_emissions
+
+# Conduct one-sample t-test
+test_result <- t.test(hypothesis_2_df_values, mu = mean(hypothesis_2_canada_values))
+
+# Extract test statistic and p-value
+test_statistic <- test_result$statistic
+p_value <- test_result$p.value
+
+# Print results
+cat("Test Statistic: ", test_statistic, "\n")
+cat("P-value: ", p_value, "\n")
+```
+
+### Q2 Interpretation?
+
+
+
+# 5. Proportion Comparison Test: Are high-income countries more likely to make emission reduction pledges?
+
+The environmental Kuznets Curve suggests we might see an inverted-U relationship of carbon emissions with national wealth. 
+
+- at low wealth levels, countries don't produce enough to cause high carbon emissions
+
+- at medium wealth levels, countries are focused on production over environmental concerns, leading to high per-capita emissions
+
+- at high wealth levels, environmental concerns become emphasized and countries spend to reduce their emissions
+
+
+We will investigate this effect by seeing whether High Income countries are more likely to sign onto the Paris Climate Agreement than poorer countries.
+
+### Our Hypotheses
+
+- H0: There is no difference in proportion signing the Agreement.
+- H1: The proportion of High Income countries signing is different from non-High Income countries
+
+
+### Steps:
+
+1. Make dataframe of `country`, `Incomegroup`, `partytopledge3`
+2. Subset out the High Income countries
+3. Compute average for High Income, and not-High Income countries
+4. Compare using statistical test
+
+
+
+```{r}
+# Create hypothesis_3_df with selected columns
+hypothesis_3_df <- policy_df %>%
+  select(country, Incomegroup, partytopledge3)
+```
+
+
+
+```{r}
+# creating High Income dataframe
+
+# Create hypothesis_3_hi data frame by filtering Incomegroup
+hypothesis_3_hi <- hypothesis_3_df %>%
+  filter(Incomegroup == "High income")
+
+# Remove rows with NA
+hypothesis_3_hi <- hypothesis_3_hi %>%
+  drop_na()
+
+# Group by country and take the first value of pledge_proportion
+hypothesis_3_hi_group <- hypothesis_3_hi %>%
+  group_by(country) %>%
+  summarise(partytopledge3 = first(partytopledge3))
+
+
+
+# creating not-High Income dataframe
+
+# Create hypothesis_3_not_hi data frame by filtering Incomegroup
+hypothesis_3_not_hi <- hypothesis_3_df %>%
+  filter(Incomegroup != "High income")
+
+# Remove rows with NA
+hypothesis_3_not_hi <- hypothesis_3_not_hi %>%
+  drop_na()
+
+# Group by country and take the first value of pledge_proportion
+hypothesis_3_not_hi_group <- hypothesis_3_not_hi %>%
+  group_by(country) %>%
+  summarise(partytopledge3 = first(partytopledge3))
+
+```
+
+
+```{r}
+cat("Proportion of High Income countries signing Paris Climate Agreement: ", mean(hypothesis_3_hi_group$partytopledge3), "\n")
+cat("Number of signatory high income countries: ", sum(hypothesis_3_hi_group$partytopledge3), "\n")
+cat("Number of high income countries: ", length(hypothesis_3_hi_group$country), "\n")
+```
+
+```{r}
+cat("Proportion of non-High Income countries signing Paris Climate Agreement: ", mean(hypothesis_3_not_hi_group$partytopledge3), "\n")
+cat("Number of signatory non-high income countries: ", sum(hypothesis_3_not_hi_group$partytopledge3), "\n")
+cat("Number of non-high income countries: ", length(hypothesis_3_not_hi_group$country), "\n")
+```
+
+
+### Q3 Hypothesis Testing
+
+This time, we're comparing two proportions with `prop.test()`
+
+Proportions comparison tests in R are fairly similar to Python. We input two vectors, with total number (`n`) and number treated (`x`).
+
+`n` holds the total numbers for each group
+
+`x` is the number treated, or to which our condition of interest applies
+
+So if we have 1000 electricians (250 of whom smoke), and 1000 doctors (190 of whom smoke), we would input their values as:
+
+`x = c(250, 190), n = c(1000, 1000)`
+
+We also use:
+
+- `alternative`: just as in t-test, this is one of {"two.sided", "less", "greater"}
+
+```{r}
+?prop.test
+```
+
+
+```{r}
+# x: we have 53 signatory HI countries and 121 signatory non_HI countries
+# n: we have 55 total HI countries and 126 total non-HI countries
+
+z_test <- prop.test(x = c(53, 121), n = c(55, 126), alternative = "two.sided", correct = F)
+
+z_test
+
+sqrt(z_test$statistic) # z-score
+
+
+```
+
+### Q3 Interp
+
+
+
+
+
+# 6. 2-Tail Means Comparison: Do high-income countries make higher or lower absolute emission reductions?
+
+So if High Income countries are more likely to sign onto climate agreements than Mid/Low-Income countries, how do they behave after signing?
+
+We're going to analyze this question by taking the mean emission reduction done by High Income countries and compare it with that of other countries. Since we don't have a strong reason to assume it will be one or the other, we will use a two-tailed test. 
+
+Our reductions will come from the `rel_reduction____` variables. The "rel" part marks these as "relative" emissions. This actually means two things!
+
+1. The reductions are *relative* to their levels at the start of the agreement coming into force. 1 is Kyoto, 2 is Copenhagen, 3 is Paris. 
+
+2. The reductions are proportional: pledging `23.4` emissions reductions means to promise to decrese by 23.4%.
+
+
+
+### Many ways to skin a cat
+
+When we ask, "Do high-income countries make higher or lower absolute emission reductions?", what exactly do we mean?
+
+There are *many* ways to turn that question into a series of commands in Python. Each of the 3 climate agreements has 2 reduction pledges; a high and a low value. This gives us 6 variables we can come up with a test on:
+
+- we might average all of them
+- we might average the high, or low, ones
+- we might take just the most recent Paris Agreeement value
+
+Any of these *could* be reasonable. We could even transform the data into proportional or absolute values. Now, what if we had an agenda to push?
+
+- we might want to say rich countries aren't pulling their share in emissions reductions!
+- we might want to say they **are** pulling their weight and everyone else should stop complaining!
+
+If you're somehow committed to a specific result, you may be tempted to run a number of these, and report the result most favorable to your views. Or, run just the one you think will give the most convenient result and not explore any others.
+
+"Researcher degrees of freedom" refers to this flexibility in how statistical analyses are designed and reported, and plays a major role in the Replication Crisis affecting much of academic social science. Economics is less badly affected than the worst offenders (psychology, sociology), but it's still a serious concern. 
+
+
+### Our specification and why
+
+We will be taking the most recent pledge round, the Paris Agreement, and using the low versions. Why?
+
+1. This uses pledges currently in place. We will suggest that climate change is being taken more seriously as of late, due to the rise in heat waves and changing weather patterns resulting from it.
+
+2. We will use the `low` value to be cynical about countries' pledges. If rich countries really are shirking, we'd see it in their lower-bound pledges.
+
+### Our Hypotheses
+
+- H0: High and non-High Income countries are not making different reduction pledges in the Paris Agreement.
+- H1: High countries are making significantly greater or smaller reduction pledges in the Paris Agreement.
+
+```{r}
+# creating hypothsis 4 dataframe
+hypothesis_4_df <- policy_df %>%
+  select(country, Incomegroup, rel_reduction_low3)
+
+print(hypothesis_4_df)
+```
+
+
+
+```{r}
+# drop na values
+hypothesis_4_df <- hypothesis_4_df %>%
+  drop_na()
+
+# taking first value of each country
+hypothesis_4_df <- hypothesis_4_df %>%
+  group_by(country) %>%
+  slice(1) %>%
+  ungroup()
+
+# high and not high income split
+hypothesis_4_hi_df <- hypothesis_4_df %>%
+  filter(Incomegroup == "High income")
+
+hypothesis_4_not_hi_df <- hypothesis_4_df %>%
+  filter(Incomegroup != "High income")
+
+```
+
+
+As we remember from yesterday, Latvia's value was *quite* the outlier among the rich countries, as was Kiribati's in the non-rich countries.
+
+
+```{r}
+
+# Make Latvia dataframe
+latvia_df <- hypothesis_4_hi_df %>%
+  filter(country == "Latvia")
+
+# Make no-Latvia dataframe
+hypothesis_4_hi_nolatvia_df <- hypothesis_4_hi_df %>%
+  filter(country != "Latvia")
+
+# Make x range, get y values
+x <- seq(1, 51)
+y <- hypothesis_4_hi_nolatvia_df$rel_reduction_low3
+
+# Create scatter plot
+plot <- ggplot(data = hypothesis_4_hi_nolatvia_df, aes(x = x, y = y)) +
+  geom_point() +
+  geom_point(data = latvia_df, aes(x = 25, y = -472), color = "red", shape = 19) +
+  geom_text(data = latvia_df, aes(x = 25, y = -460, label = "Latvia"), vjust = 0) +
+  
+  # Axis labels
+  labs(y = "Paris Agreement Emission Reduction Pledges") +
+  
+  # Plot title
+  labs(title = "What the Hell, Latvia?")
+
+print(plot)
+```
+
+For Kiribati's case: 
+
+```{r}
+# Make x range, get y values, and labels
+x <- seq(1, 98)
+y <- hypothesis_4_not_hi_df$rel_reduction_low3
+labels <- hypothesis_4_not_hi_df$country
+
+# Create scatter plot
+plot <- ggplot(data = hypothesis_4_not_hi_df, aes(x = x, y = y)) +
+  geom_point() +
+  geom_text(aes(label = labels), vjust = 1.5, hjust = 0.5, size = 3) +
+  
+  # Axis labels
+  labs(y = "Paris Agreement Emission Reduction Pledges") +
+  
+  # Plot title
+  labs(title = "Non-High Income Paris Pledges")
+
+print(plot)
+```
+
+We'll run the same two hypothesis tests comparing the two reductions, with and without outliers.
+
+### Q4 Hypothesis Testing
+
+```{r}
+mean(hypothesis_4_hi_df$rel_reduction_low3) # same mean value as in python
+var(hypothesis_4_hi_df$rel_reduction_low3) # same variance as in python
+
+mean(hypothesis_4_not_hi_df$rel_reduction_low3) # same value as in python
+var(hypothesis_4_not_hi_df$rel_reduction_low3) # again same value
+```
+
+T-test:
+
+```{r}
+?t.test
+```
+
+Unlike in Python, where we used a new function, we can get by just with the same `t.test()` function in R. 
+
+We do add a second data vector, however. Now we use both `x` and `y`.
+
+```{r}
+# Two-sample t-test
+t_test_result <- t.test(x = hypothesis_4_hi_df$rel_reduction_low3, y = hypothesis_4_not_hi_df$rel_reduction_low3, alternative = "two.sided")
+
+# Output results
+cat("T-statistic:", t_test_result$statistic, "\n")
+cat("P-value:", t_test_result$p.value, "\n")
+```
+
+Based on this result, we would conclude that High and not-High Income countries are not making (statistically) significantly different reduction pledges.
+
+But we saw that Latvia and Kiribati are extreme outliers. The paper mentioned Madagascar as well. What if we remove them?
+
+```{r}
+# Make high income df without Latvia
+hypothesis_4_hi_no_latvia_df <- hypothesis_4_hi_df %>%
+  filter(country != "Latvia") #%>%
+  #reset_index(drop = TRUE)
+
+# Make not high income df without Kiribati and Madagascar
+hypothesis_4_not_hi_no_kiri_mad_df <- hypothesis_4_not_hi_df %>%
+  filter(country != "Kiribati" & country != "Madagascar")# %>%
+  #reset_index(drop = TRUE)
+
+# Two-sample t-test
+t_test_result <- t.test(hypothesis_4_hi_no_latvia_df$rel_reduction_low3, hypothesis_4_not_hi_no_kiri_mad_df$rel_reduction_low3)
+
+# Output results
+cat("T-statistic:", t_test_result$statistic, "\n")
+cat("P-value:", t_test_result$p.value, "\n")
+```
+
+
+
+```{r}
+# extract data series
+
+data_series1 <- hypothesis_4_hi_no_latvia_df$rel_reduction_low3
+data_series2 <- hypothesis_4_not_hi_no_kiri_mad_df$rel_reduction_low3
+
+length(data_series1)
+length(seq(1,51))
+
+# Create a data frame for plotting
+plot_data <- data.frame(
+  x = c(seq(1, 51), seq(1, 96)),
+  y = c(data_series1, data_series2),
+  group = rep(c("High Income", "Not High Income"), c(length(data_series1), length(data_series2)))
+)
+
+# Create the scatter plot
+plot <- ggplot(data = plot_data, aes(x = x, y = y, color = group)) +
+  geom_point() +
+  
+  # Add labels and legend
+  labs(y = "Paris Agreement Reduction Pledges", x= "X-axis just to separate plot values", color = "Group") +
+  scale_color_manual(values = c("blue", "red"), labels = c("High Income", "Not High Income")) +
+  guides(color = guide_legend(title = "Group")) +
+  
+  # Add a title
+  labs(title = "Scatter Plot of rel_reduction_low3, Outliers Removed")
+
+# Show the plot
+print(plot)
+```
+
+We can get an intuitive feeling for this result with the above scatter plot. Ignore the horizontal variance - it's just to separate out the plot points. On the vertical axis defining reduction pledges, we can see that High Income and other countries aren't distributed differently. 
+
+When we plot *with* the outliers, we see Kiribati's value down around -8000, and then all others clumped together as a solid mass, which provides some justification for removing the outliers. 
+
+
+# 7. Group Comparisons: Are average emission levels different by region?
+
+So, if High Income countries aren't making bigger or smaller reductions than others, what does overall emission variability look like?
+
+We'll look at actual emissions, on a per-capita basis, this time. Groups will be made by overall world region. Because these vary over time, we can't just take any entry in a country's data. Instead, we'll remove all NaN values and then take the most recent value. 
+
+### Hypotheses
+
+- H0: Mean per-capita emissions are equal across world regions
+- H1: Mean per-capita emissions are not equal across world regions
+
+### Steps
+
+We'll get a dataframe with the `country`, `year`, `wbregion` and `GHG_percapita` variables, remove NaN values and grab the most recent year. Then, we'll compare the average `GHG_percapita` values by region.
+
+
+```{r}
+# Assign hypothesis 5 dataframe
+hypothesis_5_df <- policy_df %>%
+  select(country, year, wbregion, GHG_percapita)
+
+# Drop NaN values
+hypothesis_5_df <- hypothesis_5_df %>%
+  drop_na()
+
+# group by country, get most recent year for each
+hypothesis_5_df <- hypothesis_5_df %>%
+  group_by(country) %>%
+  filter(year == max(year)) %>%
+  ungroup()
+
+print(hypothesis_5_df)
+```
+
+Quick check of what the world regions are:
+
+```{r}
+# Get unique regions
+unique_regions <- unique(hypothesis_5_df$wbregion)
+
+# Print the unique regions
+print(unique_regions)
+```
+
+So, they're regions, not continents. 
+
+
+### Q5 Hypothesis Testing
+
+`aov()` is our F-test, like in Python. Its setup is different, but the outcome is the same.
+
+First, we input a formula, with our dependent variable (i.e. which one we want to test), with a tilde (~) connecting it with the variable that splits it into groups. 
+
+This looks like `GHG_percapita ~ wbregion`
+
+In comparison, our Python equivalent involved us filtering the different samples ourselves and then inputting them separately. 
+
+We also use a `data` argument, which states where to get the `formula` variables from.
+
+Then, we call `summary()` around our anova variable, and can extract the F-statistic and P-value.
+
+```{r}
+?aov
+```
+
+
+
+```{r}
+# Perform ANOVA test
+anova_result <- aov(GHG_percapita ~ wbregion, data = hypothesis_5_df)
+
+# Get ANOVA summary
+summary_result <- summary(anova_result)
+
+# Extract F-statistic and p-value
+f_statistic <- summary_result[[1]]$F[1]
+p_value <- summary_result[[1]]$"Pr(>F)"[1]
+
+# Output the results
+cat("F-statistic:", f_statistic, "\n")
+cat("P-value:", p_value, "\n")
+```
+
+The high F-Stat leads to a very low P-value, and so we can reject the null hypothesis that the regions have equal per-capita emissions values. 
+
+Extending this a bit, we can run a Tukey test, which analyzes each pair and reports a p-value for if the groups differ.
+
+
+```{r}
+# Calculate average GHG_percapita values for each wbregion
+avg_per_region <- hypothesis_5_df %>%
+  group_by(wbregion) %>%
+  summarize(average_GHG = mean(GHG_percapita, na.rm = TRUE))
+
+# Print the result
+print(avg_per_region)
+```
+
+
+Interestingly, it only registers Sub-Saharan Africa/Europe & Central Asia, and Sub-Saharan Africa/Middle East & North Africa as having statistically significant differences. 
+
+
+
+
+
+# 8. Regression: Is there evidence for an Environmental Kuznets Curve?
+
+Much of our analysis has related to the relationship of emissions, or emission pledges, to national wealth. The following model will finish off our investigation.
+
+The "Environmental Kuznets Curve" relates environmental quality with economic growth. It suggests that as a country becomes wealthier, it will first see degraded environmental quality, likely as a result of growing energy and land use in manufacturing industries. However, beyond a certain point, further increases to per-capita income will cause the environment to improve again. From here on, marginal willingness to pay for environmental quality exceeds the marginal damage caused by economic growth (or said economic growth becomes more energy efficient, or the services sector comes to dominate manufacturing). 
+
+We will model this by regressing per-capita greenhouse gas emissions against GDP/capita, and (GDP/capita)^2. The first GDP/Capita term provides the initial environmental degradation as industry grows. The quadratic term, if theory holds, will be negative and eventually dominate the linear term.
+
+### Hypotheses
+H0: There is no evidence of per-capita emissions falling with increasing wealth levels
+H1: A negative coefficient on the (GDP/capita)^2 term provides evidence of falling per-capita emissions with high wealth level
+
+### Steps
+
+We will make a dataset with country, year, GHG_percapita, and GDP_percapita variables. Then, we drop all missing values, calculate the squared GDP per capita variable, and run our regression.
+
+```{r}
+# Initialize regression dataframe
+regression_df <- policy_df %>%
+  select(country, year, GHG_percapita, GDP_percapita)
+
+# Drop missing values
+regression_df <- regression_df %>%
+  drop_na()
+
+# Calculate GDP_percapita_square
+regression_df$GDP_percapita_square <- regression_df$GDP_percapita^2
+
+# Print the first few rows of the dataframe
+head(regression_df)
+```
+
+
+First, it's never a bad idea to visualize our data. As we saw a few hypotheses back, it helps you catch outliers, and see any abnormal patterns in your data.
+
+```{r}
+# Create logged variables
+log_gdppc <- log(regression_df$GDP_percapita)
+log_ghgpc <- log(regression_df$GHG_percapita)
+
+# Create a scatter plot
+plot <- ggplot(data = data.frame(log_gdppc, log_ghgpc), aes(x = log_gdppc, y = log_ghgpc)) +
+  geom_point(alpha = 0.4, size = 2) +
+  labs(x = "GDP per Capita", y = "GHG per Capita") +
+  ggtitle("Scatter Plot of GDP per Capita vs. GHG per Capita") +
+  
+  # Add linear regression line
+  geom_smooth(method = "lm", color = "red", se = FALSE)
+
+print(plot)
+```
+
+Working with logarithm values, the relationship is... iffy. However, the logarithms make this already a nonlinear relationship, compressing in the very high values. What if we use raw data? 
+
+```{r}
+# Create variables
+gdppc <- regression_df$GDP_percapita
+ghgpc <- regression_df$GHG_percapita
+
+# Create a scatter plot
+plot <- ggplot(data = data.frame(gdppc, ghgpc), aes(x = gdppc, y = ghgpc)) +
+  geom_point(alpha = 0.4, size = 2) +
+  labs(x = "GDP per Capita", y = "GHG per Capita") +
+  ggtitle("Scatter Plot of GDP per Capita vs. GHG per Capita") +
+  
+  # Add quadratic regression line
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), color = "red", se = FALSE)
+
+print(plot)
+```
+
+Using non-logged, raw values, is rough. The data is blown way, way up by the extreme outliers on `GHG_percapita`. 
+
+*However*, the greenhouse gas emissions per capita flattens out remarkably past ~25, with even some of the richest countries being only marginally higher than the poorest. The outliers may be problematic for our regression, but we can give it a try, in `reg_1`, using non-logged values.
+
+
+### Running Regression
+
+The `lm()` function is our equivalent to the `sm.OLS()` function we used in Python. 
+
+Its arguments are similar to `aov()`. 
+
+- `formula`: specifies the outcome variable (y) and the explanatory variables (x1, x2, etc), like `y ~ x1 + x2 + x3 (...)` 
+- `data`: specifies the dataframe to take `y`, `x1`, `x2`, etc, from
+
+We then run `summary()` to output our results. We first input the variable we assigned our regression to, and then our standard errors.
+
+`type`: our standard errors. We use "HC3" heteroskedasticity-robust standard errors again
+
+```{r}
+?lm
+```
+
+
+
+
+```{r}
+# Create linear regression model
+reg_1 <- lm(GHG_percapita ~ GDP_percapita + GDP_percapita_square, data = regression_df)
+
+# Print summary of the model
+print(summary(reg_1))
+```
+
+
+```{r}
+# Create linear regression model with robust standard errors
+reg_robust <- lm(GHG_percapita ~ GDP_percapita + GDP_percapita_square, data = regression_df)
+
+# Print summary of the model with robust standard errors
+coeftest(reg_robust, vcov = vcovHC(reg_robust, type = "HC3"))
+```
+
+Our values come up mostly the same as yesterday, with differences only because of varying display methods in Python/R. 
+
+
+
+
+
