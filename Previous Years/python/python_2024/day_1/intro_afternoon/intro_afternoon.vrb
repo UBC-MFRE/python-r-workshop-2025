@@ -1,0 +1,13 @@
+\begin{lstlisting}[language=Python]
+        def is_integer(x):
+            return type(x) == int
+
+        def square(x):
+            return x * x
+
+        def square_integer(x):
+            if is_integer(x):
+                return square(x)
+            else:
+                return "Not an integer"
+    \end{lstlisting}

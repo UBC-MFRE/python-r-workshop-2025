@@ -1,0 +1,6 @@
+\begin{lstlisting}
+        library(readr)
+
+        data <- read_csv("data_frame.csv")
+        write_csv(data, "data_frame.csv")
+    \end{lstlisting}
