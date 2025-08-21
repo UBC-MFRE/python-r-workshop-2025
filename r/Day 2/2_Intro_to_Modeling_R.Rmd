@@ -133,6 +133,22 @@ cpi_t <- cpi_t %>%
 
 cpi_t
 ```
+```{r}
+dplyr::glimpse(cpi_t)
+```
+```{r}
+# Class (factor, character, numeric, Date, etc.)
+sapply(cpi_t, class)
+
+# Low-level storage type (integer, double, logical, character, list)
+sapply(cpi_t, typeof)
+
+```
+```{r}
+install.packages("skimr")
+skimr::skim(cpi_t)
+
+```
 
 ### 3.3 `select()`
 
@@ -162,7 +178,20 @@ Create new dataframes as I did above, each including the `"Year"` column and a s
 -   `services_cpi`, including any items which are primarily services performed by a person
 
 ```{r}
+library(dplyr)
 
+#colnames(cpi_t)
+
+consumables_cpi <- select(cpi_t, "Year", "Gasoline", "Energy", "Food", "Alcohol_tobacco_cannabis")
+
+consumables_cpi
+
+durables_cpi <- select(cpi_t, "Year", "Household_operations_furniture_equipment", "Clothing_and_footwear", "Shelter", "Transportation", "Recreation_education_books")
+
+durables_cpi
+
+services_cpi <- select(cpi_t, "Year", "Health_personal_care", "Services")
+services_cpi
 
 ```
 
@@ -172,8 +201,12 @@ Move `Year` to the left of the dataset by using `select()` with `Year` and `ever
 
 ```{r}
 # answer
+select(cpi_t, Year, everything())
+```
 
 
+```{r}
+cpi_t
 ```
 
 Now move all non-compound CPI types to the left: `"Food"`, `"Shelter"`, `"Transportation"`, `"Gasoline"`, `"Energy"`, `"Goods"`, and `"Services"`.
@@ -182,15 +215,22 @@ Now move all non-compound CPI types to the left: `"Food"`, `"Shelter"`, `"Transp
 # answer
 
 
+
+
 ```
 
 Select just the `"Food"` column. Does it become a vector, or stay as a tibble?
 
 ```{r}
+select(cpi_t,Year)
+
 
 ```
 
 
+```{r}
+cpi_t
+```
 
 
 ### 3.4 `mutate()`
@@ -235,6 +275,22 @@ Working with `consumables_cpi`, calculate the yearly change in `Gasoline`, `Ener
 
 ```{r}
 
+gasoline_lag = Gasoline - lag(Gasoline)
+gasoline_change = (Gasoline-lag(Gasoline)/lag(Gasoline))
+
+consumables_cpi_mutate <- mutate(
+  consumables_cpi, gasoline_lag,
+  gasoline_change_percentage = 0.1*gasoline_chnage),
+  
+  a_t_c_change = Alcohol_tobacco_cannabis - lag(Alcohol_tobacco_cannabis), 
+a_t_c_change_perc = 0.1*(Alcohol_tobacco_cannabis - lag(Alcohol_tobacco_cannabis)/lag(Alcohol_tobacco_cannabis)),
+
+energy_change = Energy - lag(Energy),
+energy_change_perc = 0.1*(Energy-lag(Energy)/lag(Energy)))
+
+consumables_cpi_mutate
+
+
 ```
 
 
@@ -247,6 +303,15 @@ You can use the `transmute()` function to create new variables, and keep only th
 Also include the `Year` column!
 
 ```{r}
+
+real_cpis<-transmute(cpi_t, Year,
+                     real_food = Food / All_items,
+                     real_gas = Gasoline / All_items,
+                     real_shelter = Shelter / All_items,
+                     real_energy = Energy/ All_items)
+
+real_cpis
+
 
 
 
@@ -265,6 +330,21 @@ You feed in a dataframe, and a condition to apply to one or more columns. It ret
 ```{r}
 food_cpi_mutate
 ```
+
+```{r}
+
+filter(food_cpi_mutate, Food>100.0)
+
+```
+
+```{r}
+#compare Food col values which are less than the value of all_items....
+
+filter(food_cpi_mutate, Food<All_items_but_food_energy)
+
+
+```
+
 
 ```{r}
 food_cpi_mutate$food_change
@@ -319,14 +399,22 @@ Now you've learned how to filter with multiple conditions. By default, `filter(d
 You can also join conditions with `|`, meaning *OR*. As long as one of these evaluates as TRUE, the overall statement will evaluate as TRUE, and you'll return the row.
 
 ```{r}
+food_cpi_mutate
+```
+
+```{r}
 # create the last dataframe again, but using an explicit & symbol between conditions rather than a comma
 
 # hint! Wrap each condition in brackets () to make it easier to read and check
 
 
+filter(food_cpi_mutate, (food_change < All_items_but_food_energy) & (food_change > 1))
+
 
 
 # create a dataframe with the same conditions stated, but joined with | instead
+
+filter(food_cpi_mutate, (food_change < All_items_but_food_energy) | (food_change > 1))
 
 
 ```
@@ -542,6 +630,10 @@ food_cpi_mutate <- food_cpi_mutate %>%
     TRUE ~ "Unknown"
   ))
 ```
+```{r}
+food_cpi_mutate
+
+```
 
 Now we can see if our stats varied systematically between even and odd years, and by decade.
 
@@ -720,6 +812,28 @@ Does this make `Fig. 5` a worse plot than `Fig. 4`? Not necessarily. **It all co
 You can make a vertical line with the `geom_vline()` function. You specify where it goes with the `xintercept` argument; make this equal to whatever year is appropriate. 
 
 ```{r}
+colnames(food_cpi_mutate)
+
+```
+
+```{r}
+
+ggplot(data = food_cpi_mutate) +
+  geom_line(mapping = aes(
+    x = Year, y = All_items_but_food_energy,
+    color = "All_items_but_food_energy"
+  )) +
+  geom_line(mapping = aes(x = Year, y = Food, color = "Food")) +
+  geom_vline(xintercept = 2010) +
+  labs(
+    title = "Exercise 1: CPI with Vline",
+    x = "Year", y = "CPI"
+  ) +
+  scale_color_manual(
+    values = c("blue", "red"),
+    labels = c("All-items", "Food"),
+    name = "Data Series:"
+  )
 
 
 ```
@@ -736,27 +850,56 @@ You can make a vertical line with the `geom_vline()` function. You specify where
 3. Take `services_cpi` and `durables_cpi`. For each, calculate an average of their CPI values using `mutate()`, or any other method of your choice. Create `averaged_cpi` by using the `cbind()` function to retrieve these from their respective Tibbles, along with the `Year` variable from one. Then plot the two series in a line plot, called `"Exercise 3: Durable VS Service CPI"`
 
 **This one is hard. Multiple steps and will require some guidance.**
-
-
 ```{r}
 colnames(durables_cpi)
 colnames(services_cpi)
+```
 
 
-# Calculate `avg_durable_cpi` 
+```{r}
+#colnames(durables_cpi)
+#colnames(services_cpi)
+
+
+# Calculate `avg_durable_cpi`
+
+durables_cpi <- durables_cpi %>% mutate(
+  avg_durables_cpi= (Household_operations_furniture_equipment+Clothing_and_footwear+Shelter+Transportation+Recreation_education_books) / 5
+)
+
+durables_cpi
+#avg using all durables data
 
 
 # Select `Year` and `avg_durable_cpi` as new dataframe in preparation for `bind_cols` later
 
+durables_cpi_select <- durables_cpi %>% select(
+  Year, avg_durables_cpi
+)
+
+durables_cpi_select
 
 # Calculate `avg_service_cpi` just as with durables case
+
+#same as the avg_durable_cpi calcualtion
+services_cpi<- services_cpi %>% mutate(
+  avg_services_cpi = (Health_personal_care + Services) / 2
+)
+
+services_cpi
 
 
 # Select `avg_service_cpi` in prep for `bind_cols`
 
+Services_cpi_select <- services_cpi %>% select(
+  avg_services_cpi
+)
+
 
 # make `averaged_cpi` tibble for plotting
 
+averaged_cpi <- bind_cols(Services_cpi_select, durables_cpi_select)
+averaged_cpi
 
 # plotting averaged cpi values
 

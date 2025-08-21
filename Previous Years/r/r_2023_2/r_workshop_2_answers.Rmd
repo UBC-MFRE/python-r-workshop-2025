@@ -1,10 +1,19 @@
 ---
 title: "R Workshop 2"
-output: html_notebook
+output:
+  pdf_document: default
+  html_notebook: default
 ---
 
 
 # R Workshop 2
+
+```{r}
+install.packages("tinytex")
+tinytex::install_tinytex()  # installs a lightweight LaTeX
+
+```
+
 
 
 ## Review: Workshop 1 Topics:
